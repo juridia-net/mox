@@ -73,6 +73,7 @@ type Static struct {
 	NoOutgoingTLSReports            bool  `sconf:"optional" sconf-doc:"Do not send TLS reports. By default, reports about failed SMTP STARTTLS connections and related MTA-STS/DANE policies are sent to domains if their TLSRPT DNS record requests them. Reports covering a 24 hour UTC interval are sent daily. Reports are sent from the postmaster address of the configured domain the mailhostname is in. If there is no such domain, or it does not have DKIM configured, no reports are sent."`
 	OutgoingTLSReportsForAllSuccess bool  `sconf:"optional" sconf-doc:"Also send TLS reports if there were no SMTP STARTTLS connection failures. By default, reports are only sent when at least one failure occurred. If a report is sent, it does always include the successful connection counts as well."`
 	QuotaMessageSize                int64 `sconf:"optional" sconf-doc:"Default maximum total message size in bytes for each individual account, only applicable if greater than zero. Can be overridden per account. Attempting to add new messages to an account beyond its maximum total size will result in an error. Useful to prevent a single account from filling storage. The quota only applies to the email message files, not to any file system overhead and also not the message index database file (account for approximately 15% overhead)."`
+	NATS                            *NATS `sconf:"optional" sconf-doc:"NATS configuration for storing email copies in object store. If configured, a copy of each incoming email will be stored in the specified NATS object store bucket."`
 
 	// All IPs that were explicitly listened on for external SMTP. Only set when there
 	// are no unspecified external SMTP listeners and there is at most one for IPv4 and
@@ -657,4 +658,16 @@ func (wi WebInternal) equal(o WebInternal) bool {
 	wi.Handler = nil
 	o.Handler = nil
 	return reflect.DeepEqual(wi, o)
+}
+
+// NATS holds the configuration for connecting to NATS and storing messages in object store.
+type NATS struct {
+	URL           string `sconf-doc:"NATS server URL, e.g. nats://localhost:4222"`
+	Username      string `sconf:"optional" sconf-doc:"Username for NATS authentication"`
+	Password      string `sconf:"optional" sconf-doc:"Password for NATS authentication"`
+	Token         string `sconf:"optional" sconf-doc:"Token for NATS authentication"`
+	CredentialsFile string `sconf:"optional" sconf-doc:"Path to NATS credentials file"`
+	BucketName    string `sconf-doc:"Object store bucket name for storing email copies"`
+	ConnectTimeout time.Duration `sconf:"optional" sconf-doc:"Connection timeout, default 30s"`
+	RequestTimeout time.Duration `sconf:"optional" sconf-doc:"Request timeout for object store operations, default 30s"`
 }

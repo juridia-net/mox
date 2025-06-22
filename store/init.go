@@ -88,6 +88,12 @@ func Init(ctx context.Context) error {
 		}
 	}()
 
+	// Initialize NATS client if configured
+	if err := InitNATS(pkglog, mox.Conf.Static.NATS); err != nil {
+		pkglog.Errorx("initializing NATS client", err)
+		// Don't fail startup if NATS initialization fails, just log the error
+	}
+
 	return nil
 }
 
@@ -104,6 +110,14 @@ func Close() error {
 	stopc = make(chan struct{})
 	loginAttemptCleanerStop <- stopc
 	<-stopc
+
+	// Close NATS client if it exists
+	if natsClient := GetNATSClient(); natsClient != nil {
+		if err := natsClient.Close(); err != nil {
+			pkglog := mlog.New("store", nil)
+			pkglog.Errorx("closing NATS client", err)
+		}
+	}
 
 	err := AuthDB.Close()
 	AuthDB = nil

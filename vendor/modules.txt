@@ -4,6 +4,10 @@ github.com/beorn7/perks/quantile
 # github.com/cespare/xxhash/v2 v2.2.0
 ## explicit; go 1.11
 github.com/cespare/xxhash/v2
+# github.com/klauspost/compress v1.18.0
+## explicit; go 1.22
+github.com/klauspost/compress/flate
+github.com/klauspost/compress/internal/le
 # github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0
 ## explicit; go 1.19
 github.com/matttproud/golang_protobuf_extensions/v2/pbutil
@@ -42,6 +46,20 @@ github.com/mjl-/sherpats/cmd/sherpats
 # github.com/mjl-/xfmt v0.0.2
 ## explicit; go 1.12
 github.com/mjl-/xfmt
+# github.com/nats-io/nats.go v1.43.0
+## explicit; go 1.23.0
+github.com/nats-io/nats.go
+github.com/nats-io/nats.go/encoders/builtin
+github.com/nats-io/nats.go/internal/parser
+github.com/nats-io/nats.go/internal/syncx
+github.com/nats-io/nats.go/jetstream
+github.com/nats-io/nats.go/util
+# github.com/nats-io/nkeys v0.4.11
+## explicit; go 1.23.0
+github.com/nats-io/nkeys
+# github.com/nats-io/nuid v1.0.1
+## explicit
+github.com/nats-io/nuid
 # github.com/prometheus/client_golang v1.18.0
 ## explicit; go 1.19
 github.com/prometheus/client_golang/prometheus
@@ -73,7 +91,13 @@ golang.org/x/crypto/acme
 golang.org/x/crypto/bcrypt
 golang.org/x/crypto/blake2b
 golang.org/x/crypto/blowfish
+golang.org/x/crypto/curve25519
+golang.org/x/crypto/internal/alias
+golang.org/x/crypto/internal/poly1305
+golang.org/x/crypto/nacl/box
+golang.org/x/crypto/nacl/secretbox
 golang.org/x/crypto/pbkdf2
+golang.org/x/crypto/salsa20/salsa
 # golang.org/x/mod v0.24.0
 ## explicit; go 1.23.0
 golang.org/x/mod/internal/lazyregexp

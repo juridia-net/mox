@@ -2519,6 +2519,19 @@ func (a *Account) MessageAdd(log mlog.Log, tx *bstore.Tx, mb *Mailbox, m *Messag
 
 	mb.MailboxCounts.Add(m.MailboxCounts())
 
+	// Store message copy in NATS object store if configured (asynchronously to avoid blocking)
+	if natsClient := GetNATSClient(); natsClient != nil && natsClient.IsConnected() {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			
+			if err := natsClient.StoreMessage(ctx, m.ID, msgFile); err != nil {
+				log.Errorx("storing message in NATS object store", err, 
+					slog.Int64("message_id", m.ID))
+			}
+		}()
+	}
+
 	return nil
 }
 

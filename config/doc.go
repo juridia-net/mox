@@ -777,6 +777,35 @@ See https://pkg.go.dev/github.com/mjl-/sconf for details.
 	# (optional)
 	QuotaMessageSize: 0
 
+	# NATS configuration for storing email copies in object store. If configured, a
+	# copy of each incoming email will be stored in the specified NATS object store
+	# bucket. (optional)
+	NATS:
+
+		# NATS server URL, e.g. nats://localhost:4222
+		URL:
+
+		# Username for NATS authentication (optional)
+		Username:
+
+		# Password for NATS authentication (optional)
+		Password:
+
+		# Token for NATS authentication (optional)
+		Token:
+
+		# Path to NATS credentials file (optional)
+		CredentialsFile:
+
+		# Object store bucket name for storing email copies
+		BucketName:
+
+		# Connection timeout, default 30s (optional)
+		ConnectTimeout: 0s
+
+		# Request timeout for object store operations, default 30s (optional)
+		RequestTimeout: 0s
+
 # domains.conf
 
 	# NOTE: This config file is in 'sconf' format. Indent with tabs. Comments must be
