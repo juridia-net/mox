@@ -25,6 +25,14 @@ type NATSClient struct {
 	log    mlog.Log
 }
 
+// Config returns the NATS configuration
+func (nc *NATSClient) Config() *config.NATS {
+	if nc == nil {
+		return nil
+	}
+	return nc.config
+}
+
 var (
 	globalNATSClient *NATSClient
 	natsOnce         sync.Once

@@ -2519,19 +2519,69 @@ func (a *Account) MessageAdd(log mlog.Log, tx *bstore.Tx, mb *Mailbox, m *Messag
 
 	mb.MailboxCounts.Add(m.MailboxCounts())
 
-	// Store message copy in NATS object store if configured (asynchronously to avoid blocking)
+	// Handle NATS storage
 	if natsClient := GetNATSClient(); natsClient != nil && natsClient.IsConnected() {
-		go func() {
+		cfg := natsClient.Config()
+		if cfg.DeleteAfterStore {
+			// Synchronous storage when delete-after-store is enabled
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			
 			if err := natsClient.StoreMessage(ctx, m.ID, msgFile); err != nil {
 				log.Errorx("storing message in NATS object store", err, 
 					slog.Int64("message_id", m.ID))
+				return fmt.Errorf("failed to store message in NATS before deletion: %w", err)
 			}
-		}()
+			
+			// Successfully stored in NATS, now delete from local storage
+			if err := a.deleteMessageFromMailbox(log, tx, mb, m); err != nil {
+				log.Errorx("deleting message after NATS storage", err,
+					slog.Int64("message_id", m.ID))
+				return fmt.Errorf("failed to delete message after NATS storage: %w", err)
+			}
+			
+			log.Info("message forwarded to NATS and deleted locally",
+				slog.Int64("message_id", m.ID),
+				slog.String("mailbox", mb.Name))
+		} else {
+			// Asynchronous storage when keeping local copy
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				
+				if err := natsClient.StoreMessage(ctx, m.ID, msgFile); err != nil {
+					log.Errorx("storing message in NATS object store", err, 
+						slog.Int64("message_id", m.ID))
+				}
+			}()
+		}
 	}
 
+	return nil
+}
+
+// deleteMessageFromMailbox removes a message from the mailbox and updates counts.
+// This is used when forwarding messages to NATS with DeleteAfterStore enabled.
+// The message file is NOT deleted here as it may still be needed by NATS storage.
+func (a *Account) deleteMessageFromMailbox(log mlog.Log, tx *bstore.Tx, mb *Mailbox, m *Message) error {
+	// Update mailbox counts by subtracting this message's counts
+	mb.MailboxCounts.Sub(m.MailboxCounts())
+	
+	// Mark message as expunged in database
+	m.Expunged = true
+	if err := tx.Update(m); err != nil {
+		return fmt.Errorf("marking message as expunged: %w", err)
+	}
+	
+	// Update mailbox
+	if err := tx.Update(mb); err != nil {
+		return fmt.Errorf("updating mailbox counts after deletion: %w", err)
+	}
+	
+	log.Debug("message marked as expunged after NATS storage",
+		slog.Int64("message_id", m.ID),
+		slog.String("mailbox", mb.Name))
+	
 	return nil
 }
 

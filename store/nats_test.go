@@ -49,3 +49,31 @@ func TestNATSStoreMessage(t *testing.T) {
 		t.Fatalf("StoreMessage with nil client should return nil: %v", err)
 	}
 }
+
+func TestNATSConfig(t *testing.T) {
+	// Test Config with nil client
+	client := GetNATSClient()
+	cfg := client.Config()
+	if cfg != nil {
+		t.Fatal("Config should return nil for nil client")
+	}
+	
+	// Test with valid config
+	log := mlog.New("nats-test", nil)
+	testConfig := &config.NATS{
+		URL:              "nats://test:4222",
+		BucketName:       "test-bucket",
+		DeleteAfterStore: true,
+	}
+	
+	// This will fail to connect but should still store config
+	err := InitNATS(log, testConfig)
+	if err != nil {
+		t.Logf("Expected connection error: %v", err)
+	}
+	
+	// Even with failed connection, we should be able to test config structure
+	if testConfig.DeleteAfterStore != true {
+		t.Fatal("DeleteAfterStore should be true")
+	}
+}

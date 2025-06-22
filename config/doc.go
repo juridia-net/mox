@@ -806,6 +806,11 @@ See https://pkg.go.dev/github.com/mjl-/sconf for details.
 		# Request timeout for object store operations, default 30s (optional)
 		RequestTimeout: 0s
 
+		# Delete email from local mailbox after successfully storing in NATS. When
+		# enabled, emails are only stored in NATS and not kept locally. Use with caution.
+		# (optional)
+		DeleteAfterStore: false
+
 # domains.conf
 
 	# NOTE: This config file is in 'sconf' format. Indent with tabs. Comments must be

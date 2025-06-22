@@ -670,4 +670,5 @@ type NATS struct {
 	BucketName    string `sconf-doc:"Object store bucket name for storing email copies"`
 	ConnectTimeout time.Duration `sconf:"optional" sconf-doc:"Connection timeout, default 30s"`
 	RequestTimeout time.Duration `sconf:"optional" sconf-doc:"Request timeout for object store operations, default 30s"`
+	DeleteAfterStore bool `sconf:"optional" sconf-doc:"Delete email from local mailbox after successfully storing in NATS. When enabled, emails are only stored in NATS and not kept locally. Use with caution."`
 }
