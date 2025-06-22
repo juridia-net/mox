@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -185,6 +186,61 @@ func (nc *NATSClient) StoreMessage(ctx context.Context, messageID int64, msgFile
 		slog.String("bucket", info.Bucket))
 
 	return nil
+}
+
+// StoreMessageAsync stores a message in the NATS object store asynchronously
+// by copying the file data first to avoid "file already closed" errors
+func (nc *NATSClient) StoreMessageAsync(ctx context.Context, messageID int64, msgFile *os.File) {
+	if nc == nil {
+		return // NATS not configured
+	}
+
+	// Seek to beginning of file
+	if _, err := msgFile.Seek(0, 0); err != nil {
+		nc.log.Errorx("seeking to start of message file for async NATS storage", err, 
+			slog.Int64("message_id", messageID))
+		return
+	}
+
+	// Read the entire file content into memory
+	data, err := os.ReadFile(msgFile.Name())
+	if err != nil {
+		nc.log.Errorx("reading message file for async NATS storage", err, 
+			slog.Int64("message_id", messageID))
+		return
+	}
+
+	// Start async storage in goroutine
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		nc.mu.Lock()
+		defer nc.mu.Unlock()
+
+		// Generate object name using message ID and timestamp
+		objectName := fmt.Sprintf("msg-%d-%d", messageID, time.Now().Unix())
+
+		// Create object metadata
+		meta := jetstream.ObjectMeta{
+			Name:        objectName,
+			Description: fmt.Sprintf("Email message ID %d", messageID),
+		}
+
+		// Store the message data in object store using bytes.Reader
+		info, err := nc.os.Put(ctx, meta, bytes.NewReader(data))
+		if err != nil {
+			nc.log.Errorx("storing message in NATS object store", err, 
+				slog.Int64("message_id", messageID))
+			return
+		}
+
+		nc.log.Debug("message stored in NATS", 
+			slog.String("object_name", objectName),
+			slog.Int64("message_id", messageID),
+			slog.Uint64("size", info.Size),
+			slog.String("bucket", info.Bucket))
+	}()
 }
 
 // Close closes the NATS connection

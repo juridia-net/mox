@@ -2545,15 +2545,7 @@ func (a *Account) MessageAdd(log mlog.Log, tx *bstore.Tx, mb *Mailbox, m *Messag
 				slog.String("mailbox", mb.Name))
 		} else {
 			// Asynchronous storage when keeping local copy
-			go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-				defer cancel()
-				
-				if err := natsClient.StoreMessage(ctx, m.ID, msgFile); err != nil {
-					log.Errorx("storing message in NATS object store", err, 
-						slog.Int64("message_id", m.ID))
-				}
-			}()
+			natsClient.StoreMessageAsync(context.Background(), m.ID, msgFile)
 		}
 	}
 
