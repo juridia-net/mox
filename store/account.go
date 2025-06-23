@@ -2527,7 +2527,7 @@ func (a *Account) MessageAdd(log mlog.Log, tx *bstore.Tx, mb *Mailbox, m *Messag
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			
-			if err := natsClient.StoreMessage(ctx, m.ID, msgFile); err != nil {
+			if err := natsClient.StoreMessageWithQueue(ctx, m.ID, msgFile); err != nil {
 				log.Errorx("storing message in NATS object store", err, 
 					slog.Int64("message_id", m.ID))
 				return fmt.Errorf("failed to store message in NATS before deletion: %w", err)
@@ -2934,7 +2934,7 @@ ruleset:
 			}
 		}
 
-	header:
+header:
 		for _, t := range rs.HeadersRegexpCompiled {
 			for k, vl := range header {
 				k = strings.ToLower(k)

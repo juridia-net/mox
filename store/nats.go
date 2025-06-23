@@ -1,11 +1,13 @@
 package store
 
 import (
-	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"math/rand"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -143,7 +145,7 @@ func newNATSClient(log mlog.Log, cfg *config.NATS) (*NATSClient, error) {
 	}
 	client.os = os
 
-	log.Info("NATS client initialized", 
+	log.Info("NATS client initialized",
 		slog.String("url", cfg.URL),
 		slog.String("bucket", cfg.BucketName))
 
@@ -179,7 +181,7 @@ func (nc *NATSClient) StoreMessage(ctx context.Context, messageID int64, msgFile
 		return fmt.Errorf("storing message in NATS object store: %w", err)
 	}
 
-	nc.log.Debug("message stored in NATS", 
+	nc.log.Debug("message stored in NATS",
 		slog.String("object_name", objectName),
 		slog.Int64("message_id", messageID),
 		slog.Uint64("size", info.Size),
@@ -194,52 +196,31 @@ func (nc *NATSClient) StoreMessageAsync(ctx context.Context, messageID int64, ms
 	if nc == nil {
 		return // NATS not configured
 	}
-
-	// Seek to beginning of file
 	if _, err := msgFile.Seek(0, 0); err != nil {
-		nc.log.Errorx("seeking to start of message file for async NATS storage", err, 
-			slog.Int64("message_id", messageID))
+		nc.log.Errorx("seeking to start of message file for async NATS storage", err, slog.Int64("message_id", messageID))
 		return
 	}
-
-	// Read the entire file content into memory
 	data, err := os.ReadFile(msgFile.Name())
 	if err != nil {
-		nc.log.Errorx("reading message file for async NATS storage", err, 
-			slog.Int64("message_id", messageID))
+		nc.log.Errorx("reading message file for async NATS storage", err, slog.Int64("message_id", messageID))
 		return
 	}
-
-	// Start async storage in goroutine
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-
-		nc.mu.Lock()
-		defer nc.mu.Unlock()
-
-		// Generate object name using message ID and timestamp
-		objectName := fmt.Sprintf("msg-%d-%d", messageID, time.Now().Unix())
-
-		// Create object metadata
-		meta := jetstream.ObjectMeta{
-			Name:        objectName,
-			Description: fmt.Sprintf("Email message ID %d", messageID),
-		}
-
-		// Store the message data in object store using bytes.Reader
-		info, err := nc.os.Put(ctx, meta, bytes.NewReader(data))
+		// Use StoreMessageWithQueue for retry logic
+		f, err := os.CreateTemp("", "nats-tmp-async-*.eml")
 		if err != nil {
-			nc.log.Errorx("storing message in NATS object store", err, 
-				slog.Int64("message_id", messageID))
+			nc.log.Errorx("cannot create temp file for async NATS storage", err)
 			return
 		}
-
-		nc.log.Debug("message stored in NATS", 
-			slog.String("object_name", objectName),
-			slog.Int64("message_id", messageID),
-			slog.Uint64("size", info.Size),
-			slog.String("bucket", info.Bucket))
+		_, err = f.Write(data)
+		if err == nil {
+			f.Seek(0, 0)
+			nc.StoreMessageWithQueue(ctx, messageID, f)
+		}
+		f.Close()
+		os.Remove(f.Name())
 	}()
 }
 
@@ -262,4 +243,80 @@ func (nc *NATSClient) IsConnected() bool {
 		return false
 	}
 	return nc.conn.IsConnected()
+}
+
+const pendingNATSDir = "store/tmp/nats-pending"
+
+func init() {
+	os.MkdirAll(pendingNATSDir, 0o700)
+	go processPendingNATSLoop()
+}
+
+// StoreMessageWithQueue tries to store in NATS, and if it fails, queues locally for retry.
+func (nc *NATSClient) StoreMessageWithQueue(ctx context.Context, messageID int64, msgFile *os.File) error {
+	if nc == nil {
+		return nil // NATS not configured
+	}
+
+	err := nc.StoreMessage(ctx, messageID, msgFile)
+	if err == nil {
+		return nil
+	}
+
+	nc.log.Errorx("NATS store failed, queueing for retry", err, slog.Int64("message_id", messageID))
+	// Save to local queue
+	if _, errSeek := msgFile.Seek(0, 0); errSeek != nil {
+		return fmt.Errorf("seek for queue: %w", errSeek)
+	}
+	queueName := filepath.Join(pendingNATSDir, fmt.Sprintf("msg-%d-%d-%d", messageID, time.Now().UnixNano(), rand.Intn(10000)))
+	out, errCreate := os.OpenFile(queueName, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
+	if errCreate != nil {
+		return fmt.Errorf("create queue file: %w", errCreate)
+	}
+	defer out.Close()
+	if _, errCopy := io.Copy(out, msgFile); errCopy != nil {
+		return fmt.Errorf("copy to queue: %w", errCopy)
+	}
+	return err
+}
+
+// processPendingNATSLoop runs forever, retrying to send queued messages to NATS.
+func processPendingNATSLoop() {
+	for {
+		files, err := os.ReadDir(pendingNATSDir)
+		if err != nil {
+			time.Sleep(10 * time.Second)
+			continue
+		}
+		for _, f := range files {
+			if f.IsDir() {
+				continue
+			}
+			path := filepath.Join(pendingNATSDir, f.Name())
+			// Parse messageID from filename
+			var messageID int64
+			_, err := fmt.Sscanf(f.Name(), "msg-%d-", &messageID)
+			if err != nil {
+				continue // skip malformed
+			}
+			client := GetNATSClient()
+			if client == nil || !client.IsConnected() {
+				break // Wait for NATS
+			}
+			file, err := os.Open(path)
+			if err != nil {
+				continue
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			storeErr := client.StoreMessage(ctx, messageID, file)
+			file.Close()
+			cancel()
+			if storeErr == nil {
+				os.Remove(path)
+			} else {
+				// Log and try later
+			}
+		}
+		time.Sleep(30 * time.Second)
+	}
 }
